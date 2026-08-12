@@ -32,14 +32,23 @@ itself is now only ever transmitted once, at login.
 
 import html
 import hmac
+import json
 import os
+import time
+from pathlib import Path
 
 from fastmcp.server.auth.auth import ClientRegistrationOptions
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from fastmcp.utilities.ui import create_secure_html_response
 from mcp.server.auth.handlers.authorize import AuthorizationRequest
-from mcp.server.auth.provider import AuthorizationParams, AuthorizeError
-from mcp.shared.auth import InvalidRedirectUriError, InvalidScopeError
+from mcp.server.auth.provider import (
+    AccessToken,
+    AuthorizationCode,
+    AuthorizationParams,
+    AuthorizeError,
+    RefreshToken,
+)
+from mcp.shared.auth import InvalidRedirectUriError, InvalidScopeError, OAuthClientInformationFull
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
@@ -92,16 +101,107 @@ def _lockout_html() -> str:
 
 
 class SingleUserOAuthProvider(InMemoryOAuthProvider):
-    """InMemoryOAuthProvider with a real login gate on /authorize.
+    """InMemoryOAuthProvider with a real login gate on /authorize, plus
+    persistence to disk.
 
-    Dynamic Client Registration is required, not optional configuration --
-    Claude's connector UI needs it to complete the handshake at all -- so
-    it's enabled here rather than left for the caller to remember.
+    InMemoryOAuthProvider holds every registered client and issued
+    access/refresh token as plain in-process dicts -- nothing survives a
+    restart. That's invisible during normal operation (tokens just keep
+    working), but a container restart (a host reboot, an image rebuild,
+    `docker compose restart`) wipes all of it silently: Claude still holds
+    what it thinks is a valid refresh token, and every request/refresh
+    attempt against the new process gets a flat 401 `invalid_token` --
+    confirmed live after a host reboot. The fix is persisting the same state
+    this class already tracks to a JSON file on the `/data` volume (already
+    mounted and already the home of the Garmin token store, so no new volume
+    needed) and reloading it on startup. Expired entries are dropped on
+    load rather than carried forward.
+
+    This file is a bearer-credential-equivalent secret (a valid refresh
+    token in it means "logged in" with no further check) -- same sensitivity
+    as `garmin_tokens.json` next to it, and covered by the same `/data`
+    gitignore.
     """
 
     def __init__(self, **kwargs):
         kwargs.setdefault("client_registration_options", ClientRegistrationOptions(enabled=True))
         super().__init__(**kwargs)
+        self._state_path = Path(os.environ.get("OAUTH_STATE_PATH", "/data/oauth_state.json"))
+        self._load_state()
+
+    def _load_state(self) -> None:
+        if not self._state_path.exists():
+            return
+        try:
+            raw = json.loads(self._state_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return  # corrupt/unreadable state just means a fresh login, not a crash
+        now = time.time()
+        self.clients = {
+            cid: OAuthClientInformationFull.model_validate(v) for cid, v in raw.get("clients", {}).items()
+        }
+        self.auth_codes = {
+            code: AuthorizationCode.model_validate(v)
+            for code, v in raw.get("auth_codes", {}).items()
+            if v.get("expires_at", 0) > now
+        }
+        self.access_tokens = {
+            tok: AccessToken.model_validate(v)
+            for tok, v in raw.get("access_tokens", {}).items()
+            if v.get("expires_at") is None or v["expires_at"] > now
+        }
+        self.refresh_tokens = {
+            tok: RefreshToken.model_validate(v)
+            for tok, v in raw.get("refresh_tokens", {}).items()
+            if v.get("expires_at") is None or v["expires_at"] > now
+        }
+        # Rebuilt access<->refresh maps only from tokens that survived the expiry
+        # filter above, so a dangling half-pair from an expired token can't persist.
+        self._access_to_refresh_map = {
+            a: r for a, r in raw.get("access_to_refresh", {}).items()
+            if a in self.access_tokens and r in self.refresh_tokens
+        }
+        self._refresh_to_access_map = {
+            r: a for r, a in raw.get("refresh_to_access", {}).items()
+            if r in self.refresh_tokens and a in self.access_tokens
+        }
+
+    def _save_state(self) -> None:
+        payload = {
+            "clients": {k: v.model_dump(mode="json") for k, v in self.clients.items()},
+            "auth_codes": {k: v.model_dump(mode="json") for k, v in self.auth_codes.items()},
+            "access_tokens": {k: v.model_dump(mode="json") for k, v in self.access_tokens.items()},
+            "refresh_tokens": {k: v.model_dump(mode="json") for k, v in self.refresh_tokens.items()},
+            "access_to_refresh": self._access_to_refresh_map,
+            "refresh_to_access": self._refresh_to_access_map,
+        }
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._state_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(self._state_path)  # atomic on both POSIX and Windows
+
+    async def register_client(self, client_info) -> None:
+        await super().register_client(client_info)
+        self._save_state()
+
+    async def authorize(self, client, params) -> str:
+        result = await super().authorize(client, params)
+        self._save_state()
+        return result
+
+    async def exchange_authorization_code(self, client, authorization_code):
+        result = await super().exchange_authorization_code(client, authorization_code)
+        self._save_state()
+        return result
+
+    async def exchange_refresh_token(self, client, refresh_token, scopes):
+        result = await super().exchange_refresh_token(client, refresh_token, scopes)
+        self._save_state()
+        return result
+
+    async def revoke_token(self, token) -> None:
+        await super().revoke_token(token)
+        self._save_state()
 
     def get_routes(self, mcp_path: str | None = None) -> list:
         routes = super().get_routes(mcp_path)
