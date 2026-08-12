@@ -120,7 +120,8 @@ server publicly with a step-by-step Tailscale Funnel example, plus notes on
 picking a host port, scheduling the GarminDB sync, and running this
 alongside another project that touches the same Garmin account. Cloudflare
 Tunnel and other reverse-tunnel options work the same way in principle and
-are left as an exercise.
+are left as an exercise — the doc only assumes you end up with a stable
+public HTTPS URL to put in `MCP_PUBLIC_URL`.
 
 ## Repo structure
 
