@@ -113,6 +113,15 @@ Yes — skip step 4 above and connect a local MCP client (MCP Inspector, or Clau
 **Is this an official Garmin project?**
 No. It's built on the unofficial [`garminconnect`](https://github.com/cyberjunky/python-garminconnect) Python client, which reverse-engineers Garmin Connect's own web API. It can break if Garmin changes that API; that's an accepted tradeoff of not having an official public API to build against.
 
+## Self-hosted setup
+
+[docs/self-hosted-setup.md](docs/self-hosted-setup.md) covers exposing this
+server publicly with a step-by-step Tailscale Funnel example, plus notes on
+picking a host port, scheduling the GarminDB sync, and running this
+alongside another project that touches the same Garmin account. Cloudflare
+Tunnel and other reverse-tunnel options work the same way in principle and
+are left as an exercise.
+
 ## Repo structure
 
 ```
@@ -127,6 +136,8 @@ garmin-mcp/
 │   ├── login.py           # one-time interactive Garmin login
 │   ├── smoke.py            # manual verification script
 │   └── sync_garmindb.py    # nightly GarminDB sync
+├── docs/
+│   └── self-hosted-setup.md  # this deployment's real config
 ├── Dockerfile
 ├── compose.yml
 ├── .env.example
