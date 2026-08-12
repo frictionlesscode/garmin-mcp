@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.garmindb-venv/
+.env
+data/
+*.db
+*.sqlite
+*.sqlite3
+garmindb.log
+
+*.egg-info/

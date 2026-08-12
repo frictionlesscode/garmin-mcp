@@ -1,0 +1,13 @@
+services:
+  garmin-mcp:
+    build: .
+    image: garmin-mcp:latest
+    container_name: garmin-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18080:8080"
+    environment:
+      - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN}
+      - MCP_PUBLIC_URL=${MCP_PUBLIC_URL}
+    volumes:
+      - ./data:/data
