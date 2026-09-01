@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "garmin-mcp"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "garminconnect==0.3.2",
     "fastmcp",
