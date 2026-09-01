@@ -1,5 +1,7 @@
 # garmin-mcp
 
+> **Unofficial and unaffiliated.** This project is not affiliated with, endorsed by, or supported by Garmin. It reaches Garmin Connect through an unofficial API client that can stop working whenever Garmin changes their site. You run it against your own account, at your own risk.
+
 A self-hosted [MCP](https://modelcontextprotocol.io) server that gives Claude read access to your Garmin Connect account — activities, sleep, HRV, body-weight trend, HR zones, blood pressure, hydration — plus a small write path (weight/BP/hydration logging) and an independent training-load calculation for the sessions Garmin's own Firstbeat pipeline can't cover.
 
 It's the data plane only. No coaching logic, no thresholds, no "you should train today" verdicts live here — those belong in a separate Claude Skill (see [garmin-coach](../garmin-coach) if you're using this alongside it). This server's job is to hand back real numbers, cleanly labeled, with nulls where the data genuinely isn't there.
