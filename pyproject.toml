@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "garmin-mcp"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "garminconnect==0.3.2",
+    "fastmcp",
+    "tzdata",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
